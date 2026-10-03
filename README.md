@@ -4,9 +4,11 @@
 
 Clinora AI is an original concept for a medical AI product that helps patients prepare for appointments. It turns scattered symptoms, notes and questions into a structured one-page **visit brief**. This repo contains the marketing site, a waitlist backed by Postgres, Clerk authentication, and an authenticated account page that reads from the app's own database. Everything works in English and in fully mirrored Arabic (RTL).
 
+Designed and built by **Vivek Chaudhary** ([@Venerablevivek](https://github.com/Venerablevivek)).
+
 > I built this with a **personal Clerk test project** on Clerk's free tier. To run it, create your own Clerk development instance (steps below). No keys are committed.
 
-**Live demo:** _add your Vercel URL here_ · **Database:** Neon Postgres · **CI:** lint, typecheck, build, 25 integration tests, 18 E2E tests
+**Live demo:** [cliniora-ai.vercel.app](https://cliniora-ai.vercel.app) · **Database:** Neon Postgres · **CI:** lint, typecheck, build, 25 integration tests, 18 E2E tests
 
 | English | Arabic (RTL) |
 | --- | --- |
