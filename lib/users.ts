@@ -1,7 +1,7 @@
 import "server-only";
 
 import { db } from "@/lib/db";
-import { isUniqueConstraintError } from "@/lib/prisma-errors";
+import { isUniqueConstraintError, TRANSACTION_OPTIONS } from "@/lib/prisma-errors";
 
 /** The minimal Clerk user shape we mirror — satisfied by both webhook payloads and Backend API users. */
 export type ClerkUserSnapshot = {
@@ -39,7 +39,7 @@ export async function upsertUserFromClerk({ clerkUserId, email, signedUpAt }: Cl
         create: { clerkUserId, email, signedUpAt },
         update: { email },
       });
-    });
+    }, TRANSACTION_OPTIONS);
 
   try {
     return await write();
