@@ -1,16 +1,25 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
-import { AlertIcon, ArrowForwardIcon, CheckIcon, InfoIcon, LockIcon, MailIcon, UserIcon } from "@/components/icons";
+import { AlertIcon, ArrowForwardIcon, InfoIcon, LockIcon, MailIcon, SparklesIcon, UserIcon } from "@/components/icons";
+import { ReferralPanel } from "@/components/landing/referral-panel";
 import { useI18n } from "@/components/language-provider";
 import { buttonClass } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
+  readInviteFromUrl,
+  readOwnCode,
+  readStoredInvite,
+  storeInvite,
+  storeOwnCode,
+} from "@/lib/referral-storage";
+import {
   toFieldErrors,
   waitlistSchema,
   type FieldErrors,
+  type QueueStatus,
   type WaitlistField,
   type WaitlistResponse,
 } from "@/lib/validators";
@@ -18,7 +27,8 @@ import {
 type FormState =
   | { kind: "idle" }
   | { kind: "submitting" }
-  | { kind: "joined"; name: string }
+  | { kind: "joined"; name: string; status: QueueStatus }
+  | { kind: "returning"; status: QueueStatus }
   | { kind: "already_joined" }
   | { kind: "failed"; reason: "generic" | "network" };
 
@@ -29,6 +39,21 @@ const fade = {
   transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as const },
 };
 
+// Browser-only values read through useSyncExternalStore: `null` on the server and during
+// hydration, then the real value — so server HTML and the first client render always match.
+const noSubscribe = () => () => {};
+const serverNull = () => null;
+const readInvite = () => readInviteFromUrl() ?? readStoredInvite();
+
+async function fetchStatus(code: string): Promise<QueueStatus | null> {
+  try {
+    const response = await fetch(`/api/waitlist/status?code=${encodeURIComponent(code)}`, { cache: "no-store" });
+    return response.ok ? ((await response.json()) as QueueStatus) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function WaitlistForm() {
   const { t } = useI18n();
   const copy = t.waitlist;
@@ -37,13 +62,58 @@ export function WaitlistForm() {
 
   const [state, setState] = useState<FormState>({ kind: "idle" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [dismissedOwnCode, setDismissedOwnCode] = useState(false);
+
+  const urlOrStoredInvite = useSyncExternalStore(noSubscribe, readInvite, serverNull);
+  const ownCode = useSyncExternalStore(noSubscribe, readOwnCode, serverNull);
+  // Never credit someone with their own link.
+  const inviteCode = urlOrStoredInvite && urlOrStoredInvite !== ownCode ? urlOrStoredInvite : null;
+
+  // Remember an invite from the URL, so it still applies after browsing other sections.
+  useEffect(() => {
+    const fromUrl = readInviteFromUrl();
+    if (fromUrl && fromUrl !== readOwnCode()) storeInvite(fromUrl);
+  }, []);
+
+  // Returning visitor who already joined on this device: show their live spot.
+  useEffect(() => {
+    if (!ownCode || dismissedOwnCode) return;
+    let cancelled = false;
+    fetchStatus(ownCode).then((status) => {
+      if (cancelled) return;
+      if (status) setState((current) => (current.kind === "idle" ? { kind: "returning", status } : current));
+      else storeOwnCode(null); // The code no longer exists (e.g. data was reset).
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownCode, dismissedOwnCode]);
+
+  const refreshStatus = useCallback(async () => {
+    if (state.kind !== "joined" && state.kind !== "returning") return;
+    setRefreshing(true);
+    const status = await fetchStatus(state.status.referralCode);
+    setRefreshing(false);
+    if (status) setState((current) => ("status" in current ? { ...current, status } : current));
+  }, [state]);
+
+  function reset() {
+    storeOwnCode(null);
+    setDismissedOwnCode(true);
+    setState({ kind: "idle" });
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
 
     // Validate locally first for instant feedback; the API re-validates with the same schema.
-    const parsed = waitlistSchema.safeParse({ name: data.get("name"), email: data.get("email") });
+    const parsed = waitlistSchema.safeParse({
+      name: data.get("name"),
+      email: data.get("email"),
+      ref: inviteCode ?? undefined,
+    });
     if (!parsed.success) {
       const errors = toFieldErrors(parsed.error);
       setFieldErrors(errors);
@@ -63,9 +133,20 @@ export function WaitlistForm() {
       const result = (await response.json()) as WaitlistResponse;
 
       switch (result.status) {
-        case "joined":
-          setState({ kind: "joined", name: result.name });
+        case "joined": {
+          const { status: _kind, name, ...status } = result;
+          void _kind;
+          storeOwnCode(status.referralCode);
+          storeInvite(null); // The invite has been used.
+          // Drop ?ref= from the address bar so it isn't confused with their own link.
+          const url = new URL(window.location.href);
+          if (url.searchParams.has("ref")) {
+            url.searchParams.delete("ref");
+            window.history.replaceState(null, "", url);
+          }
+          setState({ kind: "joined", name, status });
           break;
+        }
         case "already_joined":
           setState({ kind: "already_joined" });
           break;
@@ -96,50 +177,46 @@ export function WaitlistForm() {
     });
   }
 
-  const done = state.kind === "joined" || state.kind === "already_joined";
   const submitting = state.kind === "submitting";
+  const viewKey =
+    state.kind === "joined" || state.kind === "returning"
+      ? "referral"
+      : state.kind === "already_joined"
+        ? "duplicate"
+        : "form";
 
   return (
     <div className="relative" aria-live="polite">
       <AnimatePresence mode="wait" initial={false}>
-        {done ? (
-          <motion.div key="done" {...fade} className="flex h-full flex-col items-center py-6 text-center">
+        {state.kind === "joined" || state.kind === "returning" ? (
+          <motion.div key={viewKey} {...fade}>
+            <ReferralPanel
+              status={state.status}
+              joinedName={state.kind === "joined" ? state.name : undefined}
+              refreshing={refreshing}
+              onRefresh={refreshStatus}
+              onReset={reset}
+            />
+          </motion.div>
+        ) : state.kind === "already_joined" ? (
+          <motion.div key={viewKey} {...fade} className="flex flex-col items-center py-6 text-center">
             <motion.span
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", stiffness: 320, damping: 20, delay: 0.05 }}
-              className={cn(
-                "flex size-14 items-center justify-center rounded-full",
-                state.kind === "joined" ? "bg-mint-soft text-mint" : "bg-primary-soft text-primary",
-              )}
+              className="flex size-14 items-center justify-center rounded-full bg-primary-soft text-primary"
             >
-              {state.kind === "joined" ? (
-                <CheckIcon className="size-7" strokeWidth={2.25} />
-              ) : (
-                <InfoIcon className="size-7" />
-              )}
+              <InfoIcon className="size-7" />
             </motion.span>
-            <h3 className="mt-5 text-xl font-semibold text-ink">
-              {state.kind === "joined" ? (
-                <WithName template={copy.successTitle} name={state.name} />
-              ) : (
-                copy.duplicateTitle
-              )}
-            </h3>
-            <p className="mt-2 max-w-xs text-[15px] leading-relaxed text-muted">
-              {state.kind === "joined" ? copy.successBody : copy.duplicateBody}
-            </p>
-            <button
-              type="button"
-              onClick={() => setState({ kind: "idle" })}
-              className={buttonClass("secondary", "md", "mt-6")}
-            >
+            <h3 className="mt-5 text-xl font-semibold text-ink">{copy.duplicateTitle}</h3>
+            <p className="mt-2 max-w-xs text-[15px] leading-relaxed text-muted">{copy.duplicateBody}</p>
+            <button type="button" onClick={reset} className={buttonClass("secondary", "md", "mt-6")}>
               {copy.reset}
             </button>
           </motion.div>
         ) : (
           <motion.form
-            key="form"
+            key={viewKey}
             {...fade}
             ref={formRef}
             onSubmit={handleSubmit}
@@ -150,6 +227,13 @@ export function WaitlistForm() {
               <h3 className="text-2xl font-bold tracking-tight text-ink rtl:tracking-normal">{copy.formTitle}</h3>
               <p className="mt-1 text-sm text-muted">{copy.formBody}</p>
             </div>
+
+            {inviteCode && (
+              <p className="flex items-start gap-2.5 rounded-2xl border border-primary/15 bg-primary-soft/70 px-3.5 py-3 text-[13px] leading-relaxed text-ink-soft">
+                <SparklesIcon className="mt-0.5 size-4 shrink-0 text-primary" />
+                {copy.referral.invited}
+              </p>
+            )}
 
             <Field
               id={`${id}-name`}
@@ -209,18 +293,6 @@ export function WaitlistForm() {
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-/** Inserts a user-supplied name isolated in <bdi>, so a Latin name can't scramble Arabic punctuation. */
-function WithName({ template, name }: { template: string; name: string }) {
-  const [before, after = ""] = template.split("{name}");
-  return (
-    <>
-      {before}
-      <bdi>{name}</bdi>
-      {after}
-    </>
   );
 }
 

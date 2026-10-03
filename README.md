@@ -8,7 +8,7 @@ Designed and built by **Vivek Chaudhary** ([@Venerablevivek](https://github.com/
 
 > I built this with a **personal Clerk test project** on Clerk's free tier. To run it, create your own Clerk development instance (steps below). No keys are committed.
 
-**Live demo:** [cliniora-ai.vercel.app](https://cliniora-ai.vercel.app) · **Database:** Neon Postgres · **CI:** lint, typecheck, build, 25 integration tests, 18 E2E tests
+**Live demo:** [cliniora-ai.vercel.app](https://cliniora-ai.vercel.app) · **Database:** Neon Postgres · **CI:** lint, typecheck, build, 51 integration/unit tests, 24 E2E tests
 
 | English | Arabic (RTL) |
 | --- | --- |
@@ -151,7 +151,10 @@ npm run test:e2e      # 18 E2E tests: Playwright, desktop + mobile (needs Clerk 
   - `clerk-webhook.test.ts`: payloads signed with real Svix signatures. Covers bad and missing signatures (400), create, redelivery, update, delete, users without an email, and unrelated event types.
   - `me-api.test.ts`: Clerk is mocked. Covers 401 without a session, Postgres winning over Clerk's data, `no-store` caching, the Backend-API fallback sync, and `404 USER_NOT_SYNCED`.
   - `waitlist-api.test.ts`: 201, case-insensitive duplicate (409), per-field error codes (422), and malformed JSON (400).
-- **E2E tests (`tests/e2e`)** cover the hero and sections rendering, the waitlist success and duplicate flow, inline validation, switching to RTL Arabic and keeping it after a reload, Arabic validation messages, no horizontal overflow in either language, the `/dashboard` → `/sign-up` redirect, `/api/me` returning 401, and the branded 404. Playwright starts its own server on port 3100 pointed at `TEST_DATABASE_URL`, so it never writes into your real data.
+  - `referrals.test.ts`: unique codes, first-come order, referral credit and links, ranking and tie-breaks, distinct positions, lowercase codes, unknown or malformed codes ignored, duplicates never credited, 10 concurrent referrals counted exactly, `ON DELETE SET NULL`, the `P2028` cold-start retry, and status privacy (no name or email; 400/404).
+  - `preferences.test.ts`: 401/404/422, persisting, writes scoped to the signed-in user, and locale resolution order (default → device → saved, device beats saved, tampered cookie ignored).
+  - `tests/unit/i18n.test.ts`: English and all six Arabic plural forms with Arabic-Indic digits, plus referral-code normalization.
+- **E2E tests (`tests/e2e`)** include a two-browser **referral flow**: the inviter joins and copies their link, a friend opens it in a separate browser, sees the invite and joins, and the inviter's count goes to 1 after a refresh and after a reload. Arabic referral UI and malformed codes are covered too. They also cover the hero and sections rendering, the waitlist success and duplicate flow, inline validation, switching to RTL Arabic and keeping it after a reload, Arabic validation messages, no horizontal overflow in either language, the `/dashboard` → `/sign-up` redirect, `/api/me` returning 401, and the branded 404. Playwright starts its own server on port 3100 pointed at `TEST_DATABASE_URL`, so it never writes into your real data.
 - **CI (`.github/workflows/ci.yml`)** runs lint, typecheck and build; integration tests against a Postgres 17 service; and a `prisma migrate diff` drift check. E2E runs when you add Clerk keys as repository secrets and set the repository variable `RUN_E2E=true`.
 
 ---
@@ -166,12 +169,15 @@ app/
   sign-in/[[...sign-in]]/page.tsx  Clerk <SignIn /> in a branded shell
   sign-up/[[...sign-up]]/page.tsx  Clerk <SignUp /> in a branded shell
   dashboard/                       Protected account page (layout re-checks auth)
-  api/waitlist/route.ts            POST: Zod validation → insert, unique email
+  api/waitlist/route.ts            POST: Zod validation → insert (+ referral credit), unique email
+  api/waitlist/status/route.ts     GET: queue position + referral count for a code
+  api/me/preferences/route.ts      GET/PUT: the signed-in user's saved language
   api/me/route.ts                  GET: Clerk auth → clerkUserId → Postgres row
   api/webhooks/clerk/route.ts      POST: Svix-verified Clerk → Postgres sync
 proxy.ts                           Clerk middleware (Next 16's name for middleware.ts)
 lib/
   users.ts                         Idempotent user upsert shared by webhook + /api/me
+  waitlist.ts                      Join + referral transaction, queue ranking
   validators.ts                    Shared Zod schema + typed API contract
   i18n/                            Locale config, EN/AR dictionary, server cookie reader
 components/
@@ -211,6 +217,26 @@ Dashboard ──► GET /api/me ──► auth() → clerkUserId ──► SELEC
 - Duplicate emails are caught by the database's unique index (catching `P2002`) rather than a read-then-write, which could race. The API returns a typed contract: `201 joined`, `409 already_joined`, `422 invalid` (with per-field error codes), or `500 error`.
 - The API returns error **codes**, not prose, and the client translates them. Validation messages therefore appear in Arabic too.
 
+### Waitlist referrals
+
+After joining, everyone gets a personal invite link (`/?ref=CODE`), their **place in line** and a share panel (copy, native share, WhatsApp, X, email). Visitors who come back on the same device see their live spot again.
+
+- **Ranking rule:** more successful referrals first; ties go to whoever joined earlier, then `id`. Every position is unique and stable, so two people are never both "#1". The position is computed with an indexed `COUNT` over `(referralCount, createdAt)`.
+- **Exactly-once credit:** the new entry and the referrer's `referralCount = referralCount + 1` run in **one transaction**. A referral counts only when a new person is actually added. Duplicates (`409`), failed inserts and unknown or malformed codes never count, and concurrent sign-ups through the same link are counted exactly (tested with 10 in parallel).
+- **No self-referral:** your own link is never applied to you, and an email can only join once.
+- **Privacy:** referral codes are public (they're in shared links), so `GET /api/waitlist/status` returns only position and counts, never a name or email. A duplicate sign-up returns no code or position, so knowing someone's email reveals nothing. Invitees see "You've been invited", not who invited them.
+- **Schema:** `WaitlistEntry` gains `referralCode` (unique, generated by Postgres), `referredById` (self-relation, `ON DELETE SET NULL`) and a denormalized `referralCount`. This deliberately extends the brief's schema, and the migration is additive. Existing rows are backfilled with distinct codes, so the previous deployment keeps working while the new one rolls out.
+- **Serverless-safe:** interactive transactions allow for Neon cold starts (`maxWait` 10s, `timeout` 15s), and a transient `P2028` ("couldn't start a transaction in time") is retried. This was found by smoke-testing against Neon, and a regression test now covers it.
+
+### Saved language preference
+
+Signed-in users' language is stored on their account (`User.locale`), so a new browser or device opens in their language.
+
+- **Resolution order (server-side, before first paint):** this device's explicit choice (cookie) → the account's saved preference → English. The device's own recent choice wins over an older choice made elsewhere.
+- **Switching** while signed in updates both the cookie and `PUT /api/me/preferences`. On first sign-in, an account with no saved preference is seeded with the current language. An account *with* one is adopted on a device that hasn't chosen yet. This also works after Clerk's client-side sign-in, where the root layout doesn't re-render.
+- The dashboard's account card shows the saved language, read from Postgres.
+- **Arabic plurals** use CLDR rules via `Intl.PluralRules` (all six Arabic forms: 0, 1, 2, 3–10, 11–99, 100+), so "friends joined" is grammatical at every count.
+
 ### English / Arabic
 
 - **Server-rendered direction.** The locale is stored in a cookie, so the root layout renders `<html lang="ar" dir="rtl">` on the first byte, with no flash of LTR. The toggle updates `document.documentElement` immediately and then calls `router.refresh()` to update the page metadata and Clerk's localization (`@clerk/localizations` `arSA`).
@@ -233,6 +259,7 @@ Dashboard ──► GET /api/me ──► auth() → clerkUserId ──► SELEC
 
 - **Abuse protection on the waitlist:** rate limiting (for example Upstash) plus a honeypot or Turnstile, and a double opt-in confirmation email.
 - **Authenticated E2E:** use Clerk's testing tokens (`@clerk/testing`) to cover sign-up → webhook → dashboard in the browser. The current E2E suite stops at the auth boundary; the server side is covered by the integration tests.
+- **Referrals:** email verification before a referral counts (to stop fake-email farming), a "resend my link" flow by email, and an admin view of the queue.
 - **Webhook robustness:** store processed `svix-id`s for exact-once semantics, and ignore events older than the last applied `updated_at` so an out-of-order `user.updated` can't restore an old email.
 - **i18n at scale:** move to locale-prefixed routes (`/ar/...`) for SEO and shareable links, and use `next-intl` or a translation workflow once the copy grows. Arabic copy should get a native-speaker review.
 - **Product:** the actual brief builder (structured intake → AI summarization with clear safety rails → editable, shareable brief), plus a Privacy page to replace the inline commitments.

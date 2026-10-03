@@ -148,6 +148,35 @@ const en = {
     duplicateTitle: "You’re already on the list.",
     duplicateBody: "This email is already registered — we’ll be in touch when early access opens.",
     reset: "Add another person",
+    referral: {
+      invited: "You’ve been invited to Clinora. Joining through this link helps your friend move up the list.",
+      positionLabel: "Your place in line",
+      positionValue: "#{position}",
+      positionOf: "of {total}",
+      welcomeBack: "Welcome back — here’s your spot.",
+      shareTitle: "Move up the list",
+      shareBody: "Every friend who joins with your link moves you ahead of everyone with fewer referrals.",
+      linkLabel: "Your invite link",
+      copy: "Copy link",
+      copied: "Copied!",
+      share: "Share",
+      whatsapp: "WhatsApp",
+      x: "X",
+      email: "Email",
+      shareText: "I just joined the Clinora AI waitlist — it turns symptoms and notes into a clear visit brief before every appointment. Join me:",
+      emailSubject: "Join me on the Clinora AI waitlist",
+      referrals: {
+        zero: "No friends have joined yet",
+        one: "1 friend joined",
+        two: "{count} friends joined",
+        few: "{count} friends joined",
+        many: "{count} friends joined",
+        other: "{count} friends joined",
+      },
+      topSpot: "You’re at the front of the line!",
+      notYou: "Not you? Join with another email",
+      refresh: "Refresh",
+    },
     errors: {
       name_required: "Please enter your name.",
       name_too_short: "Name should be at least 2 characters.",
@@ -217,6 +246,10 @@ const en = {
     statusActive: "Active",
     sourceLabel: "Data source",
     sourceValue: "Clinora PostgreSQL",
+    languageLabel: "Preferred language",
+    languageSaved: "Saved to your account — follows you to any device",
+    languageNotSaved: "Saving…",
+    languageNames: { en: "English", ar: "العربية" },
     source: "Stored in Clinora database",
     signOut: "Sign out",
     manageAccount: "Manage account",
@@ -412,6 +445,35 @@ const ar: Messages = {
     duplicateTitle: "أنت مسجّل في القائمة بالفعل.",
     duplicateBody: "هذا البريد الإلكتروني مسجّل لدينا مسبقًا، وسنتواصل معك عند فتح الوصول المبكر.",
     reset: "إضافة شخص آخر",
+    referral: {
+      invited: "لقد تمت دعوتك إلى كلينورا. انضمامك عبر هذا الرابط يساعد صديقك على التقدّم في القائمة.",
+      positionLabel: "ترتيبك في القائمة",
+      positionValue: "رقم {position}",
+      positionOf: "من {total}",
+      welcomeBack: "مرحبًا بعودتك — هذا ترتيبك الحالي.",
+      shareTitle: "تقدّم في القائمة",
+      shareBody: "كل صديق ينضم عبر رابطك يقدّمك على كل من لديهم إحالات أقل.",
+      linkLabel: "رابط الدعوة الخاص بك",
+      copy: "نسخ الرابط",
+      copied: "تم النسخ!",
+      share: "مشاركة",
+      whatsapp: "واتساب",
+      x: "X",
+      email: "البريد",
+      shareText: "انضممت للتو إلى قائمة انتظار كلينورا AI — يحوّل الأعراض والملاحظات إلى ملخص زيارة واضح قبل كل موعد. انضم إليّ:",
+      emailSubject: "انضم إليّ في قائمة انتظار كلينورا AI",
+      referrals: {
+        zero: "لم ينضم أي صديق بعد",
+        one: "انضم صديق واحد",
+        two: "انضم صديقان",
+        few: "انضم {count} أصدقاء",
+        many: "انضم {count} صديقًا",
+        other: "انضم {count} صديق",
+      },
+      topSpot: "أنت في مقدّمة القائمة!",
+      notYou: "لست أنت؟ انضم ببريد آخر",
+      refresh: "تحديث",
+    },
     errors: {
       name_required: "يرجى إدخال اسمك.",
       name_too_short: "يجب أن يتكوّن الاسم من حرفين على الأقل.",
@@ -481,6 +543,10 @@ const ar: Messages = {
     statusActive: "نشط",
     sourceLabel: "مصدر البيانات",
     sourceValue: "قاعدة بيانات كلينورا (PostgreSQL)",
+    languageLabel: "اللغة المفضّلة",
+    languageSaved: "محفوظة في حسابك — تتبعك على أي جهاز",
+    languageNotSaved: "جارٍ الحفظ…",
+    languageNames: { en: "English", ar: "العربية" },
     source: "محفوظ في قاعدة بيانات كلينورا",
     signOut: "تسجيل الخروج",
     manageAccount: "إدارة الحساب",
@@ -520,6 +586,17 @@ const ar: Messages = {
 };
 
 export const messages: Record<Locale, Messages> = { en, ar };
+
+export type PluralForms = Record<"zero" | "one" | "two" | "few" | "many" | "other", string>;
+
+/**
+ * Pick the correct plural form with CLDR rules (Arabic has six: 0, 1, 2, 3–10, 11–99, 100+),
+ * then fill in `{count}` with a localized number. Zero always uses the dedicated "zero" copy.
+ */
+export function plural(locale: Locale, count: number, forms: PluralForms, intlLocale: string): string {
+  const category = count === 0 ? "zero" : (new Intl.PluralRules(locale).select(count) as keyof PluralForms);
+  return format(forms[category] ?? forms.other, { count: new Intl.NumberFormat(intlLocale).format(count) });
+}
 
 /** Replace `{token}` placeholders, e.g. format("Hi {name}", { name: "Lina" }). */
 export function format(template: string, values: Record<string, string | number>): string {

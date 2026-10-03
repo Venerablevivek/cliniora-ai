@@ -20,8 +20,9 @@ test.describe("landing page", () => {
     await form.getByLabel("Email address").fill(email);
     await form.getByRole("button", { name: "Join the waitlist" }).click();
     await expect(page.getByText("You’re on the list, E2E Tester.")).toBeVisible();
+    await expect(page.getByText("Your place in line")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add another person" }).click();
+    await page.getByRole("button", { name: "Not you? Join with another email" }).click();
     await form.getByLabel("Full name").fill("E2E Again");
     await form.getByLabel("Email address").fill(email.toUpperCase());
     await form.getByRole("button", { name: "Join the waitlist" }).click();

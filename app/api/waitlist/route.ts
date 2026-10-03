@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { db } from "@/lib/db";
-import { isUniqueConstraintError } from "@/lib/prisma-errors";
 import { toFieldErrors, waitlistSchema, type WaitlistResponse } from "@/lib/validators";
+import { joinWaitlist } from "@/lib/waitlist";
 
 function respond(body: WaitlistResponse, status: number) {
-  return NextResponse.json(body, { status });
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -21,16 +20,12 @@ export async function POST(request: Request) {
     return respond({ status: "invalid", fieldErrors: toFieldErrors(parsed.error) }, 422);
   }
 
-  const { name, email } = parsed.data;
-
   try {
-    // Rely on the unique index rather than a read-then-write, which would race.
-    await db.waitlistEntry.create({ data: { name, email } });
-    return respond({ status: "joined", name }, 201);
+    const result = await joinWaitlist(parsed.data);
+    // Deliberately no queue details for duplicates: knowing an email must not reveal
+    // someone's referral link or position.
+    return result.status === "joined" ? respond(result, 201) : respond(result, 409);
   } catch (error) {
-    if (isUniqueConstraintError(error)) {
-      return respond({ status: "already_joined" }, 409);
-    }
     console.error("[waitlist] failed to save entry", error);
     return respond({ status: "error" }, 500);
   }

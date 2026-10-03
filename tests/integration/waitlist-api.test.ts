@@ -18,7 +18,14 @@ describe("POST /api/waitlist", () => {
     const response = await post({ name: "  Lina Haddad ", email: " Lina@Example.COM " });
 
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ status: "joined", name: "Lina Haddad" });
+    expect(await response.json()).toEqual({
+      status: "joined",
+      name: "Lina Haddad",
+      referralCode: expect.stringMatching(/^[0-9A-Z]{8}$/),
+      position: 1,
+      total: 1,
+      referralCount: 0,
+    });
 
     const entry = await db.waitlistEntry.findUniqueOrThrow({ where: { email: "lina@example.com" } });
     expect(entry.name).toBe("Lina Haddad");

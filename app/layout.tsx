@@ -7,7 +7,7 @@ import { LanguageProvider } from "@/components/language-provider";
 import { clerkAppearance } from "@/lib/clerk-appearance";
 import { directionOf } from "@/lib/i18n/config";
 import { messages } from "@/lib/i18n/messages";
-import { getLocale } from "@/lib/i18n/server";
+import { getLocale, getLocaleContext } from "@/lib/i18n/server";
 
 import "./globals.css";
 
@@ -56,8 +56,9 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  // Locale comes from a cookie so the server renders the correct lang/dir on first paint.
-  const locale = await getLocale();
+  // Resolved on the server (device cookie, then the account's saved preference) so the
+  // correct lang/dir is in the very first byte of HTML.
+  const { locale, savedLocale, signedIn } = await getLocaleContext();
 
   return (
     <html
@@ -70,7 +71,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           localization={locale === "ar" ? arSA : undefined}
           appearance={clerkAppearance}
         >
-          <LanguageProvider initialLocale={locale}>{children}</LanguageProvider>
+          <LanguageProvider initialLocale={locale} savedLocale={savedLocale} signedIn={signedIn}>
+            {children}
+          </LanguageProvider>
         </ClerkProvider>
       </body>
     </html>

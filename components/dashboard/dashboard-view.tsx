@@ -12,6 +12,7 @@ import {
   CheckIcon,
   ClipboardCheckIcon,
   CodeIcon,
+  GlobeIcon,
   DatabaseIcon,
   LayersIcon,
   LockIcon,
@@ -317,7 +318,7 @@ function GettingStartedCard() {
 }
 
 function AccountCard({ state, onRetry }: { state: AccountState; onRetry: () => void }) {
-  const { t, locale } = useI18n();
+  const { t, locale, savedLocale } = useI18n();
   const { openUserProfile } = useClerk();
   const copy = t.dashboard;
 
@@ -388,6 +389,18 @@ function AccountCard({ state, onRetry }: { state: AccountState; onRetry: () => v
         </Row>
         <Row icon={<LayersIcon className="size-[18px]" />} label={copy.sourceLabel}>
           {copy.sourceValue}
+        </Row>
+        <Row icon={<GlobeIcon className="size-[18px]" />} label={copy.languageLabel}>
+          {savedLocale ? (
+            <>
+              <span lang={savedLocale}>{copy.languageNames[savedLocale]}</span>
+              <span className="mt-0.5 block text-xs font-normal text-muted">{copy.languageSaved}</span>
+            </>
+          ) : user ? (
+            <span className="text-sm font-normal text-muted">{copy.languageNotSaved}</span>
+          ) : (
+            <Skeleton className="mt-1 h-4 w-24" />
+          )}
         </Row>
       </dl>
 
