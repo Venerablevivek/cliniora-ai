@@ -1,26 +1,119 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --color-canvas: #f8fbff;
+  --color-surface: #ffffff;
+  --color-ink: #0f172a;
+  --color-ink-soft: #334155;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+  --color-line-soft: #eef2f7;
+  --color-primary: #2563eb;
+  --color-primary-strong: #1d4ed8;
+  --color-primary-soft: #eff5ff;
+  --color-cyan: #06b6d4;
+  --color-mint: #14b8a6;
+  --color-mint-soft: #ecfdf8;
+  --color-violet: #7c3aed;
+  --color-violet-soft: #f3efff;
+  --color-pink: #db2777;
+  --color-pink-soft: #fdf0f7;
+  --color-sky-soft: #e8f4ff;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: var(--font-noto-arabic), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 10px 30px -18px rgb(15 23 42 / 0.18);
+  --shadow-lift: 0 1px 2px rgb(15 23 42 / 0.04), 0 30px 60px -30px rgb(37 99 235 / 0.35);
+  --shadow-cta: 0 10px 24px -10px rgb(37 99 235 / 0.6);
+  --shadow-glass: 0 1px 0 rgb(255 255 255 / 0.8) inset, 0 20px 40px -24px rgb(30 64 175 / 0.28),
+    0 2px 6px -2px rgb(15 23 42 / 0.06);
+  --shadow-float: 0 30px 70px -30px rgb(30 64 175 / 0.4), 0 8px 20px -12px rgb(15 23 42 / 0.12);
+
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-float-slow: float 9s ease-in-out infinite;
+
+  @keyframes float {
+    0%,
+    100% {
+      translate: 0 0;
+    }
+    50% {
+      translate: 0 -10px;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Arabic gets its own typeface; any element can opt in/out with a `lang` attribute
+   (e.g. the "العربية" label on an English page, or an email on an Arabic page). */
+html {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  scroll-padding-top: 5.5rem;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+[lang="ar"] {
+  font-family: var(--font-arabic);
+}
+
+[lang="en"] {
+  font-family: var(--font-sans);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+::selection {
+  background-color: rgb(37 99 235 / 0.16);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Frosted-glass surface used by floating cards. */
+@utility glass {
+  background-color: rgb(255 255 255 / 0.72);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+
+  /* Backdrop blur is expensive on low-end phones; use a near-opaque surface instead. */
+  @media (max-width: 767px) {
+    background-color: rgb(255 255 255 / 0.92);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@utility bg-hero {
+  background:
+    radial-gradient(60% 70% at 85% 30%, rgb(186 230 253 / 0.55), transparent 70%),
+    radial-gradient(45% 60% at 0% 10%, rgb(219 234 254 / 0.8), transparent 70%),
+    linear-gradient(180deg, #eef5ff 0%, #f6faff 55%, #f8fbff 100%);
+}
+
+@utility bg-brand-gradient {
+  background-image: linear-gradient(120deg, var(--color-primary) 0%, #1e88e5 55%, var(--color-cyan) 100%);
+}
+
+@utility text-brand-gradient {
+  background-image: linear-gradient(100deg, #1d4ed8 0%, var(--color-primary) 30%, var(--color-cyan) 100%);
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-dots {
+  background-image: radial-gradient(rgb(37 99 235 / 0.14) 1px, transparent 1px);
+  background-size: 22px 22px;
 }
